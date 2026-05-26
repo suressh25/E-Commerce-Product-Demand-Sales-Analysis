@@ -1,0 +1,564 @@
+{
+  "datasets": [
+    {
+      "name": "ds_weekly_demand",
+      "displayName": "Weekly Demand",
+      "queryLines": [
+        "SELECT\n",
+        "  YEAR(o.order_date) AS year,\n",
+        "  WEEKOFYEAR(o.order_date) AS week,\n",
+        "  COALESCE(p.brand, 'Unknown') AS brand,\n",
+        "  SUM(o.quantity) AS weekly_units_sold,\n",
+        "  SUM(o.total_amount) AS weekly_revenue\n",
+        "FROM\n",
+        "  databricks_cat.silver.orders_silver o\n",
+        "    LEFT JOIN databricks_cat.silver.products_silver p\n",
+        "      ON o.product_id = p.product_id\n",
+        "GROUP BY\n",
+        "  YEAR(o.order_date),\n",
+        "  WEEKOFYEAR(o.order_date),\n",
+        "  p.brand\n",
+        "ORDER BY\n",
+        "  year,\n",
+        "  week"
+      ],
+      "catalog": "databricks_cat",
+      "schema": "default"
+    },
+    {
+      "name": "ds_daily_trend",
+      "displayName": "Daily Demand Trend",
+      "queryLines": [
+        "SELECT\n",
+        "  CAST(o.order_date AS DATE) AS order_date,\n",
+        "  COALESCE(p.brand, 'Unknown') AS brand,\n",
+        "  DAYOFWEEK(o.order_date) AS day_of_week,\n",
+        "  SUM(o.total_amount) AS daily_revenue,\n",
+        "  SUM(o.quantity) AS units_sold\n",
+        "FROM\n",
+        "  databricks_cat.silver.orders_silver o\n",
+        "    LEFT JOIN databricks_cat.silver.products_silver p\n",
+        "      ON o.product_id = p.product_id\n",
+        "GROUP BY\n",
+        "  CAST(o.order_date AS DATE),\n",
+        "  p.brand,\n",
+        "  DAYOFWEEK(o.order_date)\n",
+        "ORDER BY\n",
+        "  order_date"
+      ]
+    },
+    {
+      "name": "ds_product_perf",
+      "displayName": "Product Performance",
+      "queryLines": [
+        "SELECT\n",
+        "  o.product_id,\n",
+        "  COALESCE(p.product_name, 'Unknown') AS product_name,\n",
+        "  COALESCE(p.brand, 'Unknown') AS brand,\n",
+        "  SUM(o.quantity) AS total_units_sold,\n",
+        "  SUM(o.total_amount) AS total_revenue,\n",
+        "  COUNT(DISTINCT o.order_id) AS order_count,\n",
+        "  COUNT(DISTINCT CAST(o.order_date AS DATE)) AS active_selling_days,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        o.quantity < 0\n",
+        "        OR o.total_amount <= 0\n",
+        "      THEN\n",
+        "        1.0\n",
+        "      ELSE 0.0\n",
+        "    END\n",
+        "  )\n",
+        "    / COUNT(*)\n",
+        "    * 100 AS return_rate_pct,\n",
+        "  SUM(o.total_amount) / NULLIF(COUNT(DISTINCT CAST(o.order_date AS DATE)), 0) AS revenue_per_day\n",
+        "FROM\n",
+        "  databricks_cat.silver.orders_silver o\n",
+        "    LEFT JOIN databricks_cat.silver.products_silver p\n",
+        "      ON o.product_id = p.product_id\n",
+        "GROUP BY\n",
+        "  o.product_id,\n",
+        "  p.product_name,\n",
+        "  p.brand\n",
+        "ORDER BY\n",
+        "  total_revenue DESC"
+      ]
+    },
+    {
+      "name": "ds_kpi",
+      "displayName": "KPI Summary",
+      "queryLines": [
+        "SELECT\n",
+        "  SUM(o.total_amount) AS total_revenue,\n",
+        "  SUM(CAST(o.quantity AS BIGINT)) AS total_units_sold,\n",
+        "  COUNT(DISTINCT o.product_id) AS total_products,\n",
+        "  COUNT(DISTINCT o.order_id) AS total_orders,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        o.quantity < 0\n",
+        "        OR o.total_amount <= 0\n",
+        "      THEN\n",
+        "        1.0\n",
+        "      ELSE 0.0\n",
+        "    END\n",
+        "  )\n",
+        "    / COUNT(*)\n",
+        "    * 100 AS overall_return_rate_pct\n",
+        "FROM\n",
+        "  databricks_cat.silver.orders_silver o"
+      ]
+    },
+    {
+      "name": "ds_forecast",
+      "displayName": "30-Day Demand Forecast",
+      "queryLines": [
+        "WITH daily_agg AS (\n",
+        "  SELECT\n",
+        "    COALESCE(p.brand, 'Unknown') AS brand,\n",
+        "    CAST(o.order_date AS DATE) AS order_date,\n",
+        "    SUM(o.quantity) AS units_sold\n",
+        "  FROM\n",
+        "    databricks_cat.silver.orders_silver o\n",
+        "      LEFT JOIN databricks_cat.silver.products_silver p\n",
+        "        ON o.product_id = p.product_id\n",
+        "  GROUP BY\n",
+        "    p.brand,\n",
+        "    CAST(o.order_date AS DATE)\n",
+        "),\n",
+        "with_ma AS (\n",
+        "  SELECT\n",
+        "    brand,\n",
+        "    order_date,\n",
+        "    units_sold,\n",
+        "    AVG(units_sold) OVER (\n",
+        "        PARTITION BY brand\n",
+        "        ORDER BY order_date\n",
+        "        ROWS BETWEEN 29 PRECEDING AND CURRENT ROW\n",
+        "      ) AS ma_30day,\n",
+        "    ROW_NUMBER() OVER (PARTITION BY brand ORDER BY order_date DESC) AS rn\n",
+        "  FROM\n",
+        "    daily_agg\n",
+        "),\n",
+        "latest AS (\n",
+        "  SELECT\n",
+        "    brand,\n",
+        "    order_date AS latest_date,\n",
+        "    ROUND(ma_30day, 2) AS ma_30day\n",
+        "  FROM\n",
+        "    with_ma\n",
+        "  WHERE\n",
+        "    rn = 1\n",
+        ")\n",
+        "SELECT\n",
+        "  l.brand,\n",
+        "  DATE_ADD(l.latest_date, t.pos) AS forecast_date,\n",
+        "  ROUND(l.ma_30day, 0) AS forecasted_units,\n",
+        "  ROUND(l.ma_30day * 0.85, 0) AS lower_bound,\n",
+        "  ROUND(l.ma_30day * 1.15, 0) AS upper_bound\n",
+        "FROM\n",
+        "  latest l\n",
+        "  LATERAL VIEW explode(sequence(1, 30)) t AS pos"
+      ]
+    },
+    {
+      "name": "ds_brand_revenue",
+      "displayName": "Brand Revenue",
+      "queryLines": [
+        "SELECT\n",
+        "  COALESCE(p.brand, 'Unknown') AS brand,\n",
+        "  SUM(o.total_amount) AS total_revenue,\n",
+        "  SUM(o.quantity) AS total_units,\n",
+        "  COUNT(DISTINCT o.order_id) AS order_count,\n",
+        "  SUM(\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        o.quantity < 0\n",
+        "        OR o.total_amount <= 0\n",
+        "      THEN\n",
+        "        1.0\n",
+        "      ELSE 0.0\n",
+        "    END\n",
+        "  )\n",
+        "    / COUNT(*)\n",
+        "    * 100 AS return_rate_pct\n",
+        "FROM\n",
+        "  databricks_cat.silver.orders_silver o\n",
+        "    LEFT JOIN databricks_cat.silver.products_silver p\n",
+        "      ON o.product_id = p.product_id\n",
+        "GROUP BY\n",
+        "  p.brand\n",
+        "ORDER BY\n",
+        "  total_revenue DESC"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "57b34758",
+      "displayName": "Page 1",
+      "layout": [
+        {
+          "widget": {
+            "name": "counter_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_kpi",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Revenue"
+              },
+              "widgetType": "counter",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_units",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_kpi",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Units Sold"
+              },
+              "widgetType": "counter",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "counter_products",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_kpi",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Products"
+              },
+              "widgetType": "counter",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 0,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_top_products",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_product_perf",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Product"
+              },
+              "widgetType": "bar",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 0,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "pie_brand_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_brand_revenue",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Brand"
+              },
+              "widgetType": "pie",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_daily_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_daily_trend",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Daily Revenue Trend"
+              },
+              "widgetType": "line",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_day_of_week",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_daily_trend",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Demand by Day of Week"
+              },
+              "widgetType": "bar",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_brand_units",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_brand_revenue",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Units Sold by Brand"
+              },
+              "widgetType": "bar",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 6,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_weekly",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_weekly_demand",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Weekly Units Sold"
+              },
+              "widgetType": "bar",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_return_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_brand_revenue",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Return Rate by Brand"
+              },
+              "widgetType": "bar",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "line_forecast",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_forecast",
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "30-Day Demand Forecast"
+              },
+              "widgetType": "line",
+              "encodings": {}
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 9,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "table_product_perf",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_product_perf",
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Product Performance Details"
+              },
+              "displayRowNumbers": true,
+              "rowsPerPage": 25,
+              "widgetType": "table",
+              "encodings": {
+                "columns": []
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
