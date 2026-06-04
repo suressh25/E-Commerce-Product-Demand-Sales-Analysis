@@ -1,104 +1,225 @@
 # E-Commerce Product Demand & Sales Analysis
 
-This project builds an e-commerce demand analytics pipeline in Databricks to enrich order data, calculate demand metrics, identify product performance patterns, and generate simple forward-looking demand forecasts. The workflow uses Silver and Gold layer tables to transform operational sales data into analytics-ready datasets for reporting and decision support.
+[![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Databricks](https://img.shields.io/badge/Databricks-Latest-orange.svg)](https://databricks.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-## Project overview
+A comprehensive e-commerce demand analytics pipeline built on Databricks that enriches order data, calculates demand metrics, identifies product performance patterns, and generates forward-looking demand forecasts.
 
-The project focuses on:
+## 📋 Table of Contents
 
-* enriching order-level sales records with product attributes and time dimensions
-* building daily and weekly demand metrics
-* identifying top sellers, slow movers, and category-level revenue trends
-* generating 7-day and 30-day moving-average demand signals
-* creating a simple 30-day product demand forecast
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Notebooks](#notebooks)
+- [Data Flow](#data-flow)
+- [Getting Started](#getting-started)
+- [Prerequisites](#prerequisites)
+- [Usage](#usage)
+- [Key Outputs](#key-outputs)
+- [Future Improvements](#future-improvements)
+- [License](#license)
 
-## Architecture and flow
+## 📊 Overview
 
-The pipeline follows a staged transformation pattern:
+This project builds an end-to-end demand analytics pipeline that:
 
-1. Silver enrichment prepares analytics-ready order data.
-2. Gold metrics aggregate daily and weekly demand measures.
-3. Gold performance models summarize product and category performance.
-4. Forecasting produces moving-average signals and future demand projections.
+- Enriches order-level sales records with product attributes and time dimensions
+- Builds daily and weekly demand metrics
+- Identifies top sellers, slow movers, and category-level revenue trends
+- Generates 7-day and 30-day moving-average demand signals
+- Creates simple 30-day product demand forecasts
 
-Data flow:
+## 🏗️ Architecture
 
-* `databricks_cat.silver.orders_silver` + `databricks_cat.silver.products_silver`
-* `databricks_cat.silver.orders_demand_silver`
-* `databricks_cat.gold.DailyDemand` + `databricks_cat.gold.WeeklyDemand`
-* `databricks_cat.gold.ProductPerformance` + `databricks_cat.gold.CategoryRevenue`
-* `databricks_cat.gold.DemandForecast_MA` + `databricks_cat.gold.DemandForecast_30D`
+The pipeline follows a **medallion architecture** (Silver → Gold) staged transformation pattern:
 
-## Notebooks included
+1. **Silver Layer** - Enrichment stage that prepares analytics-ready order data
+2. **Gold Layer - Metrics** - Aggregates daily and weekly demand measures
+3. **Gold Layer - Performance** - Summarizes product and category performance
+4. **Gold Layer - Forecasting** - Produces moving-average signals and future demand projections
 
-* [Silver_DemandEnrichment](#notebook-1328420598295174)
-  * reads `databricks_cat.silver.orders_silver` and `databricks_cat.silver.products_silver`
-  * adds return flags, time attributes, unit price, category, and brand
-  * writes `databricks_cat.silver.orders_demand_silver`
+### Data Transformation Flow
 
-* [Gold_DemandMetrics](#notebook-1328420598295172)
-  * reads `databricks_cat.silver.orders_demand_silver`
-  * computes daily demand and weekly demand aggregations
-  * writes `databricks_cat.gold.DailyDemand` and `databricks_cat.gold.WeeklyDemand`
+```
+Input Tables (Silver)
+├── databricks_cat.silver.orders_silver
+└── databricks_cat.silver.products_silver
+    │
+    ▼
+Silver Enrichment
+└── databricks_cat.silver.orders_demand_silver
+    │
+    ├──▶ Gold Metrics
+    │   ├── databricks_cat.gold.DailyDemand
+    │   └── databricks_cat.gold.WeeklyDemand
+    │
+    └──▶ Gold Performance
+        ├── databricks_cat.gold.ProductPerformance
+        └── databricks_cat.gold.CategoryRevenue
+    │
+    └──▶ Gold Forecasting
+        ├── databricks_cat.gold.DemandForecast_MA
+        └── databricks_cat.gold.DemandForecast_30D
+```
 
-* [Gold_ProductPerformance](#notebook-1328420598295175)
-  * reads `databricks_cat.gold.DailyDemand`
-  * computes product KPIs, category revenue, top sellers, and slow movers
-  * writes `databricks_cat.gold.ProductPerformance` and `databricks_cat.gold.CategoryRevenue`
+## 📓 Notebooks
 
-* [Demand_Forecasting](#notebook-1328420598295171)
-  * reads `databricks_cat.gold.DailyDemand`
-  * computes 7-day and 30-day moving averages and demand trend labels
-  * writes `databricks_cat.gold.DemandForecast_MA` and `databricks_cat.gold.DemandForecast_30D`
+### 1. Silver_DemandEnrichment
+Enriches raw order and product data with additional attributes.
 
-## Source and target tables
+**Inputs:**
+- `databricks_cat.silver.orders_silver`
+- `databricks_cat.silver.products_silver`
+
+**Processing:**
+- Adds return flags and time attributes
+- Enriches with unit price, category, and brand information
+
+**Outputs:**
+- `databricks_cat.silver.orders_demand_silver`
+
+### 2. Gold_DemandMetrics
+Aggregates enriched order data into daily and weekly demand metrics.
+
+**Inputs:**
+- `databricks_cat.silver.orders_demand_silver`
+
+**Processing:**
+- Computes daily demand aggregations
+- Computes weekly demand aggregations
+
+**Outputs:**
+- `databricks_cat.gold.DailyDemand`
+- `databricks_cat.gold.WeeklyDemand`
+
+### 3. Gold_ProductPerformance
+Calculates product-level KPIs and category-level performance metrics.
+
+**Inputs:**
+- `databricks_cat.gold.DailyDemand`
+
+**Processing:**
+- Computes product KPIs
+- Identifies top sellers and slow movers
+- Calculates category revenue
+
+**Outputs:**
+- `databricks_cat.gold.ProductPerformance`
+- `databricks_cat.gold.CategoryRevenue`
+
+### 4. Demand_Forecasting
+Generates moving-average demand signals and forecast trends.
+
+**Inputs:**
+- `databricks_cat.gold.DailyDemand`
+
+**Processing:**
+- Computes 7-day and 30-day moving averages
+- Applies demand trend labeling
+
+**Outputs:**
+- `databricks_cat.gold.DemandForecast_MA`
+- `databricks_cat.gold.DemandForecast_30D`
+
+## 📈 Data Flow Summary
 
 | Layer | Inputs | Outputs |
-| --- | --- | --- |
-| Silver | `databricks_cat.silver.orders_silver`, `databricks_cat.silver.products_silver` | `databricks_cat.silver.orders_demand_silver` |
-| Gold metrics | `databricks_cat.silver.orders_demand_silver` | `databricks_cat.gold.DailyDemand`, `databricks_cat.gold.WeeklyDemand` |
-| Gold performance | `databricks_cat.gold.DailyDemand` | `databricks_cat.gold.ProductPerformance`, `databricks_cat.gold.CategoryRevenue` |
-| Forecasting | `databricks_cat.gold.DailyDemand` | `databricks_cat.gold.DemandForecast_MA`, `databricks_cat.gold.DemandForecast_30D` |
+|-------|--------|---------|
+| **Silver** | `orders_silver`, `products_silver` | `orders_demand_silver` |
+| **Gold Metrics** | `orders_demand_silver` | `DailyDemand`, `WeeklyDemand` |
+| **Gold Performance** | `DailyDemand` | `ProductPerformance`, `CategoryRevenue` |
+| **Gold Forecasting** | `DailyDemand` | `DemandForecast_MA`, `DemandForecast_30D` |
 
-## Key outputs
+## 🚀 Getting Started
 
-* enriched order demand table for downstream analytics
-* daily and weekly product demand metrics
-* product-level KPI and ranking outputs
-* category revenue summaries
-* moving-average demand trend signals
-* 30-day simple forecast with lower and upper bounds
+### Prerequisites
 
-## Prerequisites
+Before running the project, ensure you have:
 
-Before running the project, make sure you have:
+- ✅ Access to a Databricks workspace
+- ✅ Access to the `databricks_cat` catalog with Silver and Gold schemas
+- ✅ Source tables populated:
+  - `databricks_cat.silver.orders_silver`
+  - `databricks_cat.silver.products_silver`
+- ✅ Write permissions for target Gold and Silver tables
+- ✅ Access to configured Azure Data Lake Storage paths
+- ✅ Python and Delta Lake support enabled in your Databricks workspace
 
-* access to the `databricks_cat` catalog and required Silver and Gold schemas
-* source tables populated in `databricks_cat.silver.orders_silver` and `databricks_cat.silver.products_silver`
-* write permissions for the target Gold and Silver tables
-* access to the configured Azure Data Lake Storage paths referenced by the notebooks
-* a Databricks workspace with Python and Delta Lake support
+### Installation
 
-## Run order
+1. Clone this repository:
+```bash
+git clone https://github.com/suressh25/E-Commerce-Product-Demand-Sales-Analysis.git
+cd E-Commerce-Product-Demand-Sales-Analysis
+```
 
-Run the notebooks in the following order:
+2. Import the notebooks into your Databricks workspace
 
-1. [Silver_DemandEnrichment](#notebook-1328420598295174)
-2. [Gold_DemandMetrics](#notebook-1328420598295172)
-3. [Gold_ProductPerformance](#notebook-1328420598295175)
-4. [Demand_Forecasting](#notebook-1328420598295171)
+3. Update catalog and schema references if using different names than `databricks_cat`
 
-This sequence ensures each downstream notebook can read the tables created by the previous stage.
+## 📖 Usage
 
-## Dashboard
+### Running the Pipeline
 
-The project includes the dashboard [E-Commerce Product Demand & Sales Analytics](#dashboard-01f158cd73101ced9a0723e432c43f42) for business-facing analysis and visualization of the resulting demand and sales outputs.
+Execute the notebooks in the following order:
 
-## Possible next improvements
+1. **Silver_DemandEnrichment** - Prepares and enriches raw data
+2. **Gold_DemandMetrics** - Aggregates demand metrics
+3. **Gold_ProductPerformance** - Calculates performance KPIs
+4. **Demand_Forecasting** - Generates demand forecasts
 
-* replace simple moving-average forecasts with a more advanced forecasting model
-* parameterize catalog, schema, and storage paths for easier deployment
-* add data quality checks and validation rules between layers
-* orchestrate the notebooks with a scheduled Lakeflow Job
-* add incremental processing to reduce full overwrite operations
-* document dashboard metrics and business definitions in more detail
+> **Important:** Run in sequence to ensure each notebook can read tables created by the previous stage.
+
+### Expected Outputs
+
+After running the complete pipeline, you'll have:
+
+- ✅ Enriched order demand table for downstream analytics
+- ✅ Daily and weekly product demand metrics
+- ✅ Product-level KPI and ranking outputs
+- ✅ Category revenue summaries
+- ✅ Moving-average demand trend signals
+- ✅ 30-day simple forecast with lower and upper bounds
+
+## 🎯 Key Outputs
+
+| Output | Description |
+|--------|-------------|
+| `orders_demand_silver` | Enriched order data with product and time attributes |
+| `DailyDemand` | Daily product-level demand aggregations |
+| `WeeklyDemand` | Weekly product-level demand aggregations |
+| `ProductPerformance` | Product KPIs, rankings, and performance metrics |
+| `CategoryRevenue` | Category-level revenue summaries |
+| `DemandForecast_MA` | 7-day and 30-day moving-average signals |
+| `DemandForecast_30D` | 30-day demand forecast with confidence bounds |
+
+## 🔮 Future Improvements
+
+- [ ] Replace simple moving-average forecasts with advanced statistical or ML models (ARIMA, Prophet, etc.)
+- [ ] Parameterize catalog, schema, and storage paths for easier multi-environment deployment
+- [ ] Add comprehensive data quality checks and validation rules between layers
+- [ ] Orchestrate notebooks with Databricks Workflows/Jobs scheduler
+- [ ] Implement incremental processing to reduce full overwrite operations
+- [ ] Create comprehensive dashboard documentation with metric definitions
+- [ ] Add unit tests and integration tests for data quality
+- [ ] Implement error handling and logging across all notebooks
+
+## 📊 Dashboard
+
+The project includes an **E-Commerce Product Demand & Sales Analytics** dashboard for business-facing analysis and visualization of demand metrics and forecast results.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 📞 Support
+
+For questions or issues, please open a GitHub Issue in this repository.
+
+---
+
+**Built with ❤️ using Databricks and Delta Lake**
